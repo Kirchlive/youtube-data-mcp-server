@@ -115,8 +115,17 @@ async function main() {
                     lang
                 });
 
+                // Format JSON with text object on single line
+                let jsonOutput = JSON.stringify(result, null, 2);
+
+                // Compress "text": { ... } to single line
+                jsonOutput = jsonOutput.replace(
+                    /"text":\s*\{[^}]*\}/gs,
+                    (match) => match.replace(/\s+/g, ' ').replace(/\s*:\s*/g, ':').replace(/\s*,\s*/g, ',')
+                );
+
                 return {
-                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                    content: [{ type: "text", text: jsonOutput }]
                 };
             } catch (error: any) {
                 return {
