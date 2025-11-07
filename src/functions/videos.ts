@@ -179,7 +179,7 @@ export class VideoManagement {
       }
 
       // Step 4: Fetch transcripts if requested
-      const transcriptMap = new Map<string, { text: string, segments: Array<{ timestamp: string, text: string, start: number }> }>();
+      const transcriptMap = new Map<string, { fullText: string, formattedSegments: Array<Record<string, string>> }>();
 
       if (includeTagDescTrans) {
         await Promise.all(
@@ -191,26 +191,23 @@ export class VideoManagement {
                 lang: targetLang
               });
 
-              // Convert subtitle array to full text
+              // Convert subtitle array to full text (for word counting)
               const fullText = subtitles.map(item => item.text).join(' ');
 
-              // Create timestamped segments
-              const segments = subtitles.map(item => {
+              // Create formatted segments: [{"0:00": "text"}, {"0:05": "text"}, ...]
+              const formattedSegments = subtitles.map(item => {
                 const startSeconds = parseFloat(item.start);
                 const minutes = Math.floor(startSeconds / 60);
                 const seconds = Math.floor(startSeconds % 60);
+                const timestamp = `${minutes}:${String(seconds).padStart(2, '0')}`;
 
-                return {
-                  timestamp: `${minutes}:${String(seconds).padStart(2, '0')}`,
-                  text: item.text,
-                  start: startSeconds
-                };
+                return { [timestamp]: item.text };
               });
 
-              transcriptMap.set(videoId, { text: fullText, segments });
+              transcriptMap.set(videoId, { fullText, formattedSegments });
             } catch (error) {
               // Transcript might not be available - skip silently
-              transcriptMap.set(videoId, { text: '', segments: [] });
+              transcriptMap.set(videoId, { fullText: '', formattedSegments: [] });
             }
           })
         );
@@ -270,11 +267,11 @@ export class VideoManagement {
         if (includeTagDescTrans && transcriptMap.has(videoId)) {
           const transcriptData = transcriptMap.get(videoId)!;
 
-          if (transcriptData && transcriptData.text) {
-            const chunked = this.chunkTranscriptByWords(transcriptData.text, transcriptChunk, chunkStart);
+          if (transcriptData && transcriptData.fullText) {
+            const chunked = this.chunkTranscriptByWords(transcriptData.fullText, transcriptChunk, chunkStart);
             transcription = {
-              ...chunked,
-              segments: transcriptData.segments
+              text: transcriptData.formattedSegments,
+              chunkInfo: chunked.chunkInfo
             };
           }
         }

@@ -279,13 +279,7 @@ export interface OptimizedVideoDetails {
   tags?: string[];
   videoDescription?: string;
   transcription?: {
-    text: string;
-    wordCount: number;
-    segments?: Array<{
-      timestamp: string;      // formatted "MM:SS"
-      text: string;
-      start: number;          // seconds
-    }>;
+    text: Array<Record<string, string>>;  // [{"0:00": "text"}, {"0:05": "text"}, ...]
     chunkInfo?: {
       chunkStart: number;
       chunkEnd: number;
