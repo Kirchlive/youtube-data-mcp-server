@@ -2,6 +2,7 @@
 
 import 'dotenv/config';
 import { VideoManagement } from './functions/videos.js';
+import { PlaylistManagement } from './functions/playlists.js';
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -58,6 +59,12 @@ interface CompareVideosParams {
     videoIds: string[];
 }
 
+interface SearchTranscriptParams {
+    videoId: string;
+    query: string;
+    lang?: string;
+}
+
 interface VideoEngagementRatiosParams {
     videoIds: string[];
 }
@@ -68,7 +75,8 @@ interface ChannelStatisticsParams {
 
 async function main() {
     const videoManager = new VideoManagement();
-    
+    const playlistManager = new PlaylistManagement();
+
     // Create MCP server
     const server = new McpServer({
         name: "YouTube",
@@ -145,33 +153,86 @@ async function main() {
     // Video transcript retrieval tool
     server.tool("getTranscripts",
         "Retrieves transcripts for multiple videos. Returns the text content of videos' captions, useful for accessibility and content analysis. Use this when you need the spoken content of multiple videos.",
-        { 
+        {
             videoIds: z.array(z.string()),
             lang: z.string().optional()
         },
         async ({ videoIds, lang }: TranscriptsParams) => {
             try {
-                const transcriptPromises = videoIds.map(videoId => 
+                const transcriptPromises = videoIds.map(videoId =>
                     videoManager.getTranscript(videoId, lang)
                 );
                 const transcripts = await Promise.all(transcriptPromises);
-                
+
                 // Create a map of videoId to transcript
                 const result = videoIds.reduce((acc, videoId, index) => {
                     acc[videoId] = transcripts[index];
                     return acc;
                 }, {} as Record<string, any>);
-                
+
                 return {
                     content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
                 };
             } catch (error: any) {
                 return {
-                    content: [{ 
-                        type: "text", 
+                    content: [{
+                        type: "text",
                         text: JSON.stringify({
                             error: error.message
-                        }, null, 2) 
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    // Search transcript tool
+    server.tool("searchTranscript",
+        "Search within a video's transcript for specific terms or phrases. Returns matching segments with timestamps and highlighted text. Useful for finding specific mentions, quotes, or topics within videos.",
+        {
+            videoId: z.string(),
+            query: z.string(),
+            lang: z.string().optional()
+        },
+        async ({ videoId, query, lang }: SearchTranscriptParams) => {
+            try {
+                const result = await videoManager.searchTranscript(videoId, query, lang);
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    // Timestamped captions tool
+    server.tool("getTimestampedCaptions",
+        "Get video captions with human-readable timestamps (MM:SS format). Returns transcript segments with formatted time markers for easy reference and citation.",
+        {
+            videoId: z.string(),
+            lang: z.string().optional()
+        },
+        async ({ videoId, lang }: TranscriptParams) => {
+            try {
+                const result = await videoManager.getTimestampedCaptions(videoId, lang);
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
                     }]
                 };
             }
@@ -181,7 +242,7 @@ async function main() {
     // Related videos retrieval tool
     server.tool("getRelatedVideos",
         "Retrieves related videos for a specific video. Returns a list of videos that are similar or related to the specified video, based on YouTube's recommendation algorithm. Use this when you want to discover content similar to a particular video.",
-        { 
+        {
             videoId: z.string(),
             maxResults: z.number().optional()
         },
@@ -193,12 +254,38 @@ async function main() {
                 };
             } catch (error: any) {
                 return {
-                    content: [{ 
-                        type: "text", 
+                    content: [{
+                        type: "text",
                         text: JSON.stringify({
                             error: error.message,
                             details: error.response?.data
-                        }, null, 2) 
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    // Channel information retrieval tool
+    server.tool("getChannel",
+        "Get comprehensive information about a YouTube channel including description, branding, content details, and statistics. Returns full channel data beyond just statistics.",
+        {
+            channelId: z.string(),
+            parts: z.array(z.string()).optional()
+        },
+        async ({ channelId, parts }: { channelId: string; parts?: string[] }) => {
+            try {
+                const result = await videoManager.getChannel({ channelId, parts });
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
                     }]
                 };
             }
@@ -340,12 +427,174 @@ async function main() {
                 };
             } catch (error: any) {
                 return {
-                    content: [{ 
-                        type: "text", 
+                    content: [{
+                        type: "text",
                         text: JSON.stringify({
                             error: error.message,
                             details: error.response?.data
-                        }, null, 2) 
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    // Playlist tools
+    server.tool("getPlaylist",
+        "Get detailed information about a YouTube playlist including metadata, video count, and description.",
+        {
+            playlistId: z.string(),
+            parts: z.array(z.string()).optional()
+        },
+        async ({ playlistId, parts }) => {
+            try {
+                const result = await playlistManager.getPlaylist({ playlistId, parts });
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    server.tool("getPlaylistItems",
+        "Get all videos in a YouTube playlist with pagination support. Returns video details for each item in the playlist.",
+        {
+            playlistId: z.string(),
+            maxResults: z.number().optional()
+        },
+        async ({ playlistId, maxResults }) => {
+            try {
+                const result = await playlistManager.getPlaylistItems({ playlistId, maxResults });
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    server.tool("searchPlaylists",
+        "Search for playlists on YouTube by query. Returns matching playlists with their metadata.",
+        {
+            query: z.string(),
+            maxResults: z.number().optional()
+        },
+        async ({ query, maxResults }) => {
+            try {
+                const result = await playlistManager.searchPlaylists({ query, maxResults });
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    server.tool("getPlaylistVideoTranscripts",
+        "Get transcripts for all videos in a playlist. Useful for batch transcript extraction with language support.",
+        {
+            playlistId: z.string(),
+            lang: z.string().optional(),
+            maxVideos: z.number().optional()
+        },
+        async ({ playlistId, lang, maxVideos }) => {
+            try {
+                const result = await playlistManager.getPlaylistVideoTranscripts({
+                    playlistId,
+                    lang,
+                    maxVideos
+                });
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    server.tool("listChannelPlaylists",
+        "List all playlists from a specific YouTube channel. Returns playlist metadata for channel organization.",
+        {
+            channelId: z.string(),
+            maxResults: z.number().optional()
+        },
+        async ({ channelId, maxResults }) => {
+            try {
+                const result = await playlistManager.listChannelPlaylists(channelId, maxResults);
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
+                    }]
+                };
+            }
+        }
+    );
+
+    // Channel content search tool
+    server.tool("searchChannelContent",
+        "Search for videos within a specific YouTube channel. Combines channel filtering with search functionality.",
+        {
+            channelId: z.string(),
+            query: z.string(),
+            maxResults: z.number().optional()
+        },
+        async ({ channelId, query, maxResults }) => {
+            try {
+                const result = await videoManager.searchChannelContent({
+                    channelId,
+                    query,
+                    maxResults
+                });
+                return {
+                    content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+                };
+            } catch (error) {
+                return {
+                    content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: error instanceof Error ? error.message : String(error)
+                        }, null, 2)
                     }]
                 };
             }

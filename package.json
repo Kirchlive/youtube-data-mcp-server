@@ -1,7 +1,7 @@
 {
   "name": "youtube-data-mcp-server",
-  "version": "1.0.15",
-  "description": "YouTube MCP Server Implementation",
+  "version": "2.0.0",
+  "description": "Enhanced YouTube MCP Server with Playlist Management and Advanced Features",
   "main": "dist/index.js",
   "type": "module",
   "bin": {

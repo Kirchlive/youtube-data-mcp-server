@@ -1,48 +1,99 @@
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/icraft2170-youtube-data-mcp-server-badge.png)](https://mseep.ai/app/icraft2170-youtube-data-mcp-server)
 
-# YouTube MCP Server
+# YouTube MCP Server v2.0
 [![smithery badge](https://smithery.ai/badge/@icraft2170/youtube-data-mcp-server)](https://smithery.ai/server/@icraft2170/youtube-data-mcp-server)
 
-A Model Context Protocol (MCP) server implementation utilizing the YouTube Data API. It allows AI language models to interact with YouTube content through a standardized interface.
+An enhanced Model Context Protocol (MCP) server implementation with comprehensive YouTube Data API integration. Featuring advanced playlist management, transcript search, and robust error handling. Perfect for AI applications requiring deep YouTube content analysis.
+
+## ⭐ What's New in v2.0
+
+### 🎵 Complete Playlist Management (NEW)
+* Get playlist metadata and video listings
+* Search for playlists across YouTube
+* Batch extract transcripts from entire playlists
+* List all playlists from any channel
+
+### 🔍 Advanced Transcript Features (NEW)
+* Search within video transcripts for specific terms
+* Get human-readable timestamps (MM:SS format)
+* Highlight matching text in search results
+
+### 🏗️ Architecture Improvements (NEW)
+* Lazy initialization for better performance
+* Type-safe error handling throughout
+* Comprehensive channel information retrieval
+* Search within specific channel content
+
+### 📊 Enhanced Existing Features
+* Bulk operations with array inputs
+* Advanced pagination (up to 500 results)
+* Parallel processing with Promise.all
+* Robust error messages with context
 
 ## Key Features
 
-### Video Information
-* Retrieve detailed video information (title, description, duration, statistics)
-* Search for videos by keywords
-* Get related videos based on a specific video
-* Calculate and analyze video engagement ratios
-
-### Transcript/Caption Management
-* Retrieve video captions with multi-language support
-* Specify language preferences for transcripts
-* Access time-stamped captions for precise content reference
-
-### Channel Analysis
-* View detailed channel statistics (subscribers, views, video count)
-* Get top-performing videos from a channel
-* Analyze channel growth and engagement metrics
-
-### Trend Analysis
+### Video Management (6 Tools)
+* Retrieve detailed video information for multiple videos
+* Advanced search with pagination support
+* Find related videos
+* Calculate engagement ratios
+* Compare video statistics side-by-side
 * View trending videos by region and category
-* Compare performance metrics across multiple videos
-* Discover popular content in specific categories
 
-## Available Tools
+### Transcript/Caption Management (4 Tools)
+* Bulk transcript retrieval with language support
+* Search within transcripts for specific terms
+* Human-readable timestamps for easy citation
+* Auto-generated caption support
 
-The server provides the following MCP tools:
+### Channel Operations (4 Tools)
+* Full channel information and statistics
+* Top-performing videos from channels
+* Search within specific channel content
+* Analyze channel metrics
 
-| Tool Name | Description | Required Parameters |
-|-----------|-------------|---------------------|
-| `getVideoDetails` | Get detailed information about multiple YouTube videos including metadata, statistics, and content details | `videoIds` (array) |
-| `searchVideos` | Search for videos based on a query string | `query`, `maxResults` (optional) |
-| `getTranscripts` | Retrieve transcripts for multiple videos | `videoIds` (array), `lang` (optional) |
-| `getRelatedVideos` | Get videos related to a specific video based on YouTube's recommendation algorithm | `videoId`, `maxResults` (optional) |
-| `getChannelStatistics` | Retrieve detailed metrics for multiple channels including subscriber count, view count, and video count | `channelIds` (array) |
-| `getChannelTopVideos` | Get the most viewed videos from a specific channel | `channelId`, `maxResults` (optional) |
-| `getVideoEngagementRatio` | Calculate engagement metrics for multiple videos (views, likes, comments, and engagement ratio) | `videoIds` (array) |
-| `getTrendingVideos` | Get currently popular videos by region and category | `regionCode` (optional), `categoryId` (optional), `maxResults` (optional) |
-| `compareVideos` | Compare statistics across multiple videos | `videoIds` (array) |
+### Playlist Operations (5 Tools - NEW!)
+* Get playlist details and metadata
+* List all videos in playlists
+* Search for playlists by query
+* Batch transcript extraction from playlists
+* List all playlists from channels
+
+## Available Tools (18 Total)
+
+### Video Tools (6)
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `getVideoDetails` | Bulk video information retrieval | `videoIds` (array) |
+| `searchVideos` | Advanced search with pagination | `query`, `maxResults?` |
+| `getRelatedVideos` | Find similar content | `videoId`, `maxResults?` |
+| `compareVideos` | Side-by-side video comparison | `videoIds` (array) |
+| `getVideoEngagementRatio` | Calculate engagement metrics | `videoIds` (array) |
+| `getTrendingVideos` | Regional trending content | `regionCode?`, `categoryId?`, `maxResults?` |
+
+### Transcript Tools (4)
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `getTranscripts` | Bulk transcript retrieval | `videoIds` (array), `lang?` |
+| `searchTranscript` | **NEW** Search within transcripts | `videoId`, `query`, `lang?` |
+| `getTimestampedCaptions` | **NEW** Human-readable timestamps | `videoId`, `lang?` |
+
+### Channel Tools (4)
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `getChannel` | **NEW** Full channel information | `channelId`, `parts?` |
+| `getChannelStatistics` | Channel metrics (bulk) | `channelIds` (array) |
+| `getChannelTopVideos` | Most popular videos | `channelId`, `maxResults?` |
+| `searchChannelContent` | **NEW** Search within channel | `channelId`, `query`, `maxResults?` |
+
+### Playlist Tools (5) - **ALL NEW!**
+| Tool | Description | Parameters |
+|------|-------------|------------|
+| `getPlaylist` | Playlist metadata | `playlistId`, `parts?` |
+| `getPlaylistItems` | Videos in playlist | `playlistId`, `maxResults?` |
+| `searchPlaylists` | Find playlists | `query`, `maxResults?` |
+| `getPlaylistVideoTranscripts` | Batch playlist transcripts | `playlistId`, `lang?`, `maxVideos?` |
+| `listChannelPlaylists` | Channel's playlists | `channelId`, `maxResults?` |
 
 ## Installation
 
@@ -121,6 +172,34 @@ The server exposes the following ports for communication:
 - Always keep your API key secure and never commit it to version control systems
 - Manage your API key through environment variables or configuration files
 - Set usage limits for your API key to prevent unauthorized use
+
+## Changelog
+
+### v2.0.0 (2025-11-07)
+**Major Release - Feature Complete**
+
+**New Features:**
+- 🎵 Complete Playlist Management (5 new tools)
+- 🔍 Advanced transcript search capabilities
+- ⏱️ Human-readable timestamp formatting
+- 📺 Full channel information retrieval
+- 🔎 Channel content search
+
+**Improvements:**
+- ✅ Type-safe error handling across all methods
+- ✅ Lazy initialization for better performance
+- ✅ Enhanced error messages with context
+- ✅ Upgraded to youtube-caption-extractor (better auto-generated caption support)
+
+**Tools Added:** 9 → 18 (+100% growth)
+
+### v1.0.15
+- Initial public release
+- Basic video, transcript, and channel tools
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## License
 This project is licensed under the MIT License. See the LICENSE file for details. 
