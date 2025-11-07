@@ -136,7 +136,53 @@ export class VideoManagement {
     }
   }
 
-  async getTranscript(videoId: string, lang?: string) {
+  /**
+   * Apply chunking to transcript array
+   * @param transcript - Full transcript array
+   * @param chunk - Chunk number (0 or undefined = full, 1 = first 1000, 2 = next 1000, etc.)
+   * @returns Chunked transcript with metadata
+   */
+  private chunkTranscript<T>(transcript: T[], chunk?: number): { items: T[], chunkInfo: { chunk: number, start: number, end: number, total: number, hasMore: boolean } } {
+    const CHUNK_SIZE = 1000;
+
+    // chunk 0 or undefined means return full transcript
+    if (!chunk || chunk === 0) {
+      return {
+        items: transcript,
+        chunkInfo: {
+          chunk: 0,
+          start: 0,
+          end: transcript.length,
+          total: transcript.length,
+          hasMore: false
+        }
+      };
+    }
+
+    // Calculate chunk boundaries
+    const startIndex = (chunk - 1) * CHUNK_SIZE;
+    const endIndex = Math.min(startIndex + CHUNK_SIZE, transcript.length);
+
+    // Validate chunk number
+    if (startIndex >= transcript.length) {
+      throw new Error(
+        `Invalid chunk ${chunk}: transcript only has ${transcript.length} lines (${Math.ceil(transcript.length / CHUNK_SIZE)} chunks available)`
+      );
+    }
+
+    return {
+      items: transcript.slice(startIndex, endIndex),
+      chunkInfo: {
+        chunk,
+        start: startIndex,
+        end: endIndex,
+        total: transcript.length,
+        hasMore: endIndex < transcript.length
+      }
+    };
+  }
+
+  async getTranscript(videoId: string, lang?: string, chunk?: number) {
     try {
       // Use provided language, environment variable, or default to 'en'
       const targetLang = lang || process.env.YOUTUBE_TRANSCRIPT_LANG || 'en';
@@ -145,6 +191,15 @@ export class VideoManagement {
         videoID: videoId,
         lang: targetLang
       });
+
+      // Apply chunking if requested
+      if (chunk !== undefined) {
+        const chunked = this.chunkTranscript(transcript, chunk);
+        return {
+          transcript: chunked.items,
+          ...chunked.chunkInfo
+        };
+      }
 
       return transcript;
     } catch (error) {
@@ -162,14 +217,39 @@ export class VideoManagement {
     await this.initialize();
 
     try {
-      const response = await this.ensureInitialized().search.list({
+      // Get video details to extract category and channel
+      const videoResponse = await this.ensureInitialized().videos.list({
+        part: ['snippet'],
+        id: [videoId]
+      });
+
+      if (!videoResponse.data.items?.length) {
+        throw new Error('Video not found');
+      }
+
+      const video = videoResponse.data.items[0];
+      const categoryId = video.snippet?.categoryId;
+      const channelId = video.snippet?.channelId;
+
+      if (!categoryId) {
+        throw new Error('Video category not available');
+      }
+
+      // Search for videos in the same category
+      const searchResponse = await this.ensureInitialized().search.list({
         part: ['snippet'],
         type: ['video'],
-        maxResults,
-        relatedToVideoId: videoId
-      } as youtube_v3.Params$Resource$Search$List);
+        videoCategoryId: categoryId,
+        maxResults: maxResults + 5, // Get a few extra to filter out the original video
+        order: 'relevance'
+      });
 
-      return response.data.items || [];
+      // Filter out the original video and limit results
+      const relatedVideos = (searchResponse.data.items || [])
+        .filter(item => item.id?.videoId !== videoId)
+        .slice(0, maxResults);
+
+      return relatedVideos;
     } catch (error) {
       throw new Error(
         `Failed to retrieve related videos: ${error instanceof Error ? error.message : String(error)}`
@@ -400,23 +480,38 @@ export class VideoManagement {
    * @param videoId - YouTube video ID
    * @param query - Search term (case-insensitive)
    * @param lang - Language code (optional)
+   * @param chunk - Chunk number for pagination (0=full, 1=first 1000, 2=next 1000, etc.)
    * @returns Matching transcript segments with timestamps
    */
-  async searchTranscript(videoId: string, query: string, lang?: string) {
+  async searchTranscript(videoId: string, query: string, lang?: string, chunk?: number) {
     try {
-      const transcript = await this.getTranscript(videoId, lang);
+      // Get full transcript (without chunking yet)
+      const transcriptData = await this.getTranscript(videoId, lang);
+
+      // Handle both chunked and unchunked response formats
+      const transcript = Array.isArray(transcriptData) ? transcriptData : transcriptData.transcript;
 
       const queryLower = query.toLowerCase();
       const matches = transcript.filter(item =>
         item.text.toLowerCase().includes(queryLower)
       );
 
+      // Apply chunking to matches if requested
+      let finalMatches = matches;
+      let chunkInfo = undefined;
+
+      if (chunk !== undefined) {
+        const chunked = this.chunkTranscript(matches, chunk);
+        finalMatches = chunked.items;
+        chunkInfo = chunked.chunkInfo;
+      }
+
       return {
         videoId,
         query,
         language: lang || process.env.YOUTUBE_TRANSCRIPT_LANG || 'en',
         matchCount: matches.length,
-        matches: matches.map(item => ({
+        matches: finalMatches.map(item => ({
           start: item.start,
           duration: item.dur,
           text: item.text,
@@ -425,7 +520,8 @@ export class VideoManagement {
             new RegExp(query, 'gi'),
             (match) => `**${match}**`
           )
-        }))
+        })),
+        ...(chunkInfo && { chunkInfo })
       };
     } catch (error) {
       throw new Error(
@@ -440,13 +536,25 @@ export class VideoManagement {
    * Get transcript with human-readable timestamps
    * @param videoId - YouTube video ID
    * @param lang - Language code (optional)
+   * @param chunk - Chunk number for pagination (0=full, 1=first 1000, 2=next 1000, etc.)
    * @returns Transcript with formatted timestamps
    */
-  async getTimestampedCaptions(videoId: string, lang?: string) {
+  async getTimestampedCaptions(videoId: string, lang?: string, chunk?: number) {
     try {
-      const transcript = await this.getTranscript(videoId, lang);
+      // Get transcript with or without chunking
+      const transcriptData = await this.getTranscript(videoId, lang, chunk);
 
-      return transcript.map(item => {
+      // Handle both chunked and unchunked response formats
+      const transcript = Array.isArray(transcriptData) ? transcriptData : transcriptData.transcript;
+      const chunkInfo = Array.isArray(transcriptData) ? undefined : {
+        chunk: transcriptData.chunk,
+        start: transcriptData.start,
+        end: transcriptData.end,
+        total: transcriptData.total,
+        hasMore: transcriptData.hasMore
+      };
+
+      const formattedCaptions = transcript.map(item => {
         const startSeconds = parseFloat(item.start);
         const minutes = Math.floor(startSeconds / 60);
         const seconds = Math.floor(startSeconds % 60);
@@ -460,6 +568,11 @@ export class VideoManagement {
           durationSeconds: parseFloat(item.dur)
         };
       });
+
+      return chunkInfo ? {
+        captions: formattedCaptions,
+        chunkInfo
+      } : formattedCaptions;
     } catch (error) {
       throw new Error(
         `Failed to get timestamped captions for video ${videoId}: ${

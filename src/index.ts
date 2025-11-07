@@ -27,11 +27,13 @@ interface VideoDetailsListParams {
 interface TranscriptParams {
     videoId: string;
     lang?: string;
+    chunk?: number;
 }
 
 interface TranscriptsParams {
     videoIds: string[];
     lang?: string;
+    chunk?: number;
 }
 
 interface SearchParams {
@@ -63,6 +65,7 @@ interface SearchTranscriptParams {
     videoId: string;
     query: string;
     lang?: string;
+    chunk?: number;
 }
 
 interface VideoEngagementRatiosParams {
@@ -152,15 +155,16 @@ async function main() {
 
     // Video transcript retrieval tool
     server.tool("getTranscripts",
-        "Retrieves transcripts for multiple videos. Returns the text content of videos' captions, useful for accessibility and content analysis. Use this when you need the spoken content of multiple videos.",
+        "Retrieves transcripts for multiple videos. Returns the text content of videos' captions, useful for accessibility and content analysis. Use this when you need the spoken content of multiple videos. Use chunk parameter to paginate long transcripts (0=full, 1=first 1000 lines, 2=next 1000, etc.).",
         {
             videoIds: z.array(z.string()),
-            lang: z.string().optional()
+            lang: z.string().optional(),
+            chunk: z.number().optional()
         },
-        async ({ videoIds, lang }: TranscriptsParams) => {
+        async ({ videoIds, lang, chunk }: TranscriptsParams) => {
             try {
                 const transcriptPromises = videoIds.map(videoId =>
-                    videoManager.getTranscript(videoId, lang)
+                    videoManager.getTranscript(videoId, lang, chunk)
                 );
                 const transcripts = await Promise.all(transcriptPromises);
 
@@ -188,15 +192,16 @@ async function main() {
 
     // Search transcript tool
     server.tool("searchTranscript",
-        "Search within a video's transcript for specific terms or phrases. Returns matching segments with timestamps and highlighted text. Useful for finding specific mentions, quotes, or topics within videos.",
+        "Search within a video's transcript for specific terms or phrases. Returns matching segments with timestamps and highlighted text. Useful for finding specific mentions, quotes, or topics within videos. Use chunk parameter to paginate results (0=full, 1=first 1000 matches, 2=next 1000, etc.).",
         {
             videoId: z.string(),
             query: z.string(),
-            lang: z.string().optional()
+            lang: z.string().optional(),
+            chunk: z.number().optional()
         },
-        async ({ videoId, query, lang }: SearchTranscriptParams) => {
+        async ({ videoId, query, lang, chunk }: SearchTranscriptParams) => {
             try {
-                const result = await videoManager.searchTranscript(videoId, query, lang);
+                const result = await videoManager.searchTranscript(videoId, query, lang, chunk);
                 return {
                     content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
                 };
@@ -215,14 +220,15 @@ async function main() {
 
     // Timestamped captions tool
     server.tool("getTimestampedCaptions",
-        "Get video captions with human-readable timestamps (MM:SS format). Returns transcript segments with formatted time markers for easy reference and citation.",
+        "Get video captions with human-readable timestamps (MM:SS format). Returns transcript segments with formatted time markers for easy reference and citation. Use chunk parameter to paginate long transcripts (0=full, 1=first 1000 lines, 2=next 1000, etc.).",
         {
             videoId: z.string(),
-            lang: z.string().optional()
+            lang: z.string().optional(),
+            chunk: z.number().optional()
         },
-        async ({ videoId, lang }: TranscriptParams) => {
+        async ({ videoId, lang, chunk }: TranscriptParams) => {
             try {
-                const result = await videoManager.getTimestampedCaptions(videoId, lang);
+                const result = await videoManager.getTimestampedCaptions(videoId, lang, chunk);
                 return {
                     content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
                 };
@@ -516,18 +522,20 @@ async function main() {
     );
 
     server.tool("getPlaylistVideoTranscripts",
-        "Get transcripts for all videos in a playlist. Useful for batch transcript extraction with language support.",
+        "Get transcripts for all videos in a playlist. Useful for batch transcript extraction with language support. Use chunk parameter to paginate each video's transcript (0=full, 1=first 1000 lines, 2=next 1000, etc.).",
         {
             playlistId: z.string(),
             lang: z.string().optional(),
-            maxVideos: z.number().optional()
+            maxVideos: z.number().optional(),
+            chunk: z.number().optional()
         },
-        async ({ playlistId, lang, maxVideos }) => {
+        async ({ playlistId, lang, maxVideos, chunk }) => {
             try {
                 const result = await playlistManager.getPlaylistVideoTranscripts({
                     playlistId,
                     lang,
-                    maxVideos
+                    maxVideos,
+                    chunk
                 });
                 return {
                     content: [{ type: "text", text: JSON.stringify(result, null, 2) }]

@@ -20,6 +20,7 @@ export interface PlaylistTranscriptsOptions {
   playlistId: string;
   lang?: string;
   maxVideos?: number;
+  chunk?: number;
 }
 
 export class PlaylistManagement {
@@ -30,6 +31,52 @@ export class PlaylistManagement {
 
   constructor() {
     // Lazy initialization
+  }
+
+  /**
+   * Apply chunking to transcript array
+   * @param items - Array to chunk
+   * @param chunk - Chunk number (0 or undefined = full, 1 = first 1000, 2 = next 1000, etc.)
+   * @returns Chunked array with metadata
+   */
+  private chunkArray<T>(items: T[], chunk?: number): { items: T[], chunkInfo: { chunk: number, start: number, end: number, total: number, hasMore: boolean } } {
+    const CHUNK_SIZE = 1000;
+
+    // chunk 0 or undefined means return full array
+    if (!chunk || chunk === 0) {
+      return {
+        items,
+        chunkInfo: {
+          chunk: 0,
+          start: 0,
+          end: items.length,
+          total: items.length,
+          hasMore: false
+        }
+      };
+    }
+
+    // Calculate chunk boundaries
+    const startIndex = (chunk - 1) * CHUNK_SIZE;
+    const endIndex = Math.min(startIndex + CHUNK_SIZE, items.length);
+
+    // Validate chunk number
+    if (startIndex >= items.length) {
+      throw new Error(
+        `Invalid chunk ${chunk}: only ${items.length} items available (${Math.ceil(items.length / CHUNK_SIZE)} chunks available)`
+      );
+    }
+
+    return {
+      items: items.slice(startIndex, endIndex),
+      chunkInfo: {
+        chunk,
+        start: startIndex,
+        end: endIndex,
+        total: items.length,
+        hasMore: endIndex < items.length
+      }
+    };
   }
 
   private async initialize(): Promise<void> {
@@ -168,11 +215,13 @@ export class PlaylistManagement {
 
   /**
    * Get transcripts for all videos in a playlist
+   * Note: chunk parameter applies to each individual video's transcript to avoid token limits
    */
   async getPlaylistVideoTranscripts({
     playlistId,
     lang,
-    maxVideos = 50
+    maxVideos = 50,
+    chunk
   }: PlaylistTranscriptsOptions) {
     await this.initialize();
 
@@ -193,14 +242,26 @@ export class PlaylistManagement {
       const transcripts = await Promise.all(
         videoIds.map(async (videoId) => {
           try {
-            const transcript = await getSubtitles({
+            const fullTranscript = await getSubtitles({
               videoID: videoId,
               lang: targetLang
             });
+
+            // Apply chunking if requested
+            let transcript = fullTranscript;
+            let chunkInfo = undefined;
+
+            if (chunk !== undefined) {
+              const chunked = this.chunkArray(fullTranscript, chunk);
+              transcript = chunked.items;
+              chunkInfo = chunked.chunkInfo;
+            }
+
             return {
               videoId,
               success: true,
-              transcript
+              transcript,
+              ...(chunkInfo && { chunkInfo })
             };
           } catch (error) {
             return {
@@ -217,7 +278,8 @@ export class PlaylistManagement {
         language: targetLang,
         totalVideos: videoIds.length,
         successfulTranscripts: transcripts.filter(t => t.success).length,
-        transcripts
+        transcripts,
+        ...(chunk !== undefined && { note: `Each transcript is chunked (chunk ${chunk})` })
       };
     } catch (error) {
       throw new Error(
