@@ -88,35 +88,40 @@ async function main() {
 
     // Video details retrieval tool
     server.tool("getVideoDetails",
-        "Get detailed information about multiple YouTube videos. Returns comprehensive data including video metadata, statistics, and content details. Use this when you need complete information about specific videos.",
-        { videoIds: z.array(z.string()) },
-        async ({ videoIds }: VideoDetailsListParams) => {
+        "Get optimized video details with channel metrics and transcripts. Returns ~500-800 tokens per video (vs ~3000 with raw API). Includes: video info, engagement metrics, formatted duration, category names, word-based transcript chunking, and comprehensive channel metrics with NCS score (Normalized Channel Score: Excellent/Good/Average/Bad). Use transcriptChunk for word-based pagination (default: 1000 words) and chunkStart to set starting word position (e.g., chunkStart=1001 for second chunk).",
+        {
+            videoIds: z.array(z.string()),
+            includeChannelInfo: z.boolean().optional(),
+            includeTagDescTrans: z.boolean().optional(),
+            transcriptChunk: z.number().optional(),
+            chunkStart: z.number().optional(),
+            descriptionLength: z.number().optional(),
+            tagsLength: z.number().optional(),
+            lang: z.string().optional()
+        },
+        async ({ videoIds, includeChannelInfo, includeTagDescTrans, transcriptChunk, chunkStart, descriptionLength, tagsLength, lang }) => {
             try {
-                const videoPromises = videoIds.map(videoId => 
-                    videoManager.getVideo({
-                        videoId,
-                        parts: ["snippet", "statistics", "contentDetails"]
-                    })
-                );
-                const videoDetailsList = await Promise.all(videoPromises);
-                
-                // Create a map of videoId to details
-                const result = videoIds.reduce((acc, videoId, index) => {
-                    acc[videoId] = videoDetailsList[index];
-                    return acc;
-                }, {} as Record<string, any>);
-                
+                const result = await videoManager.getVideoDetails(videoIds, {
+                    includeChannelInfo,
+                    includeTagDescTrans,
+                    transcriptChunk,
+                    chunkStart,
+                    descriptionLength,
+                    tagsLength,
+                    lang
+                });
+
                 return {
                     content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
                 };
             } catch (error: any) {
                 return {
-                    content: [{ 
-                        type: "text", 
+                    content: [{
+                        type: "text",
                         text: JSON.stringify({
                             error: error.message,
                             details: error.response?.data
-                        }, null, 2) 
+                        }, null, 2)
                     }]
                 };
             }

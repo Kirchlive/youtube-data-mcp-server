@@ -152,4 +152,150 @@ export interface OptimizedPlaylistItem {
 export interface GetPlaylistItemsResponse {
   totalListVideos: number;
   items: OptimizedPlaylistItem[];
+}
+
+// YouTube Topic ID to Name Mapping (simplified - most common topics)
+export const TOPIC_NAMES: Record<string, string> = {
+  '/m/04rlf': 'Music',
+  '/m/02mscn': 'Christian music',
+  '/m/0ggq0m': 'Classical music',
+  '/m/01lyv': 'Country',
+  '/m/02lkt': 'Electronic music',
+  '/m/0glt670': 'Hip hop music',
+  '/m/05rwpb': 'Independent music',
+  '/m/03_d0': 'Jazz',
+  '/m/028sqc': 'Music of Asia',
+  '/m/0g293': 'Music of Latin America',
+  '/m/064t9': 'Pop music',
+  '/m/06cqb': 'Reggae',
+  '/m/06j6l': 'Rhythm and blues',
+  '/m/06by7': 'Rock music',
+  '/m/0gywn': 'Soul music',
+  '/m/02kjxx': 'Gaming',
+  '/m/025zzc': 'Action game',
+  '/m/02ntfj': 'Action-adventure game',
+  '/m/0b1vjn': 'Casual game',
+  '/m/02hygl': 'Music video game',
+  '/m/04q1x3q': 'Puzzle video game',
+  '/m/01sjng': 'Racing video game',
+  '/m/0403l3g': 'Role-playing video game',
+  '/m/021bp2': 'Simulation video game',
+  '/m/022dc6': 'Sports game',
+  '/m/03hf_rm': 'Strategy video game',
+  '/m/06ntj': 'Sports',
+  '/m/0jm_': 'American football',
+  '/m/018jz': 'Baseball',
+  '/m/018w8': 'Basketball',
+  '/m/01cgz': 'Boxing',
+  '/m/09xp_': 'Cricket',
+  '/m/02vx4': 'Football',
+  '/m/037hz': 'Golf',
+  '/m/03tmr': 'Ice hockey',
+  '/m/01h7lh': 'Mixed martial arts',
+  '/m/0410tth': 'Motorsport',
+  '/m/07bs0': 'Tennis',
+  '/m/07_53': 'Volleyball',
+  '/m/02jjt': 'Entertainment',
+  '/m/09kqc': 'Humor',
+  '/m/02vxn': 'Movies',
+  '/m/05qjc': 'Performing arts',
+  '/m/066wd': 'Professional wrestling',
+  '/m/0f2f9': 'TV shows',
+  '/m/019_rr': 'Lifestyle',
+  '/m/032tl': 'Fashion',
+  '/m/027x7n': 'Fitness',
+  '/m/02wbm': 'Food',
+  '/m/03glg': 'Hobby',
+  '/m/068hy': 'Pets',
+  '/m/041xxh': 'Physical attractiveness',
+  '/m/07c1v': 'Technology',
+  '/m/0kt51': 'Tourism',
+  '/m/07bxq': 'Vehicles',
+  '/m/01k8wb': 'Knowledge'
+};
+
+/**
+ * Get topic name from topic ID
+ * @param topicId - YouTube topic ID
+ * @returns Topic name or the ID if not found
+ */
+export function getTopicName(topicId?: string): string {
+  if (!topicId) return 'Unknown';
+  return TOPIC_NAMES[topicId] || topicId;
+}
+
+// NCS Rating categories
+export type NCSRating = 'Excellent' | 'Good' | 'Average' | 'Bad';
+
+/**
+ * Get NCS rating from score
+ * @param score - NCS Total Score (0-100)
+ * @returns Rating category
+ */
+export function getNCSRating(score: number): NCSRating {
+  if (score >= 80) return 'Excellent';
+  if (score >= 60) return 'Good';
+  if (score >= 40) return 'Average';
+  return 'Bad';
+}
+
+// Channel metrics with calculated ratios
+export interface ChannelMetrics {
+  channelName: string;
+  channelId: string;
+  subscriberCount: number;
+  channelViewCount: number;
+  channelVideoCount: number;
+  channelPublished: string;
+  avgVideoViews: number;              // channelViewCount / channelVideoCount
+  ccVideosPerWeek: number;            // channelVideoCount / ChannelAgeWeeks
+  vsrViewsSubsRatio: number;          // (avgVideoViews / Subs) * 100
+  ncsTotal: number;                   // Normalized Channel Score (0-100)
+  ncsRating: NCSRating;               // Excellent/Good/Average/Bad
+  channelDescription?: string;
+  keywords?: string[];
+  topicIds?: string[];                // Topic names, not IDs
+  channelLanguage?: string;
+}
+
+// Options for getVideoDetails
+export interface GetVideoDetailsOptions {
+  includeChannelInfo?: boolean;       // default: true
+  includeTagDescTrans?: boolean;      // default: true
+  transcriptChunk?: number;           // default: 1000 words
+  chunkStart?: number;                // default: 1 (start at word 1, then 1001...)
+  descriptionLength?: number;         // default: 250
+  tagsLength?: number;                // default: 100
+  lang?: string;                      // transcript language
+}
+
+// Optimized video details with channel metrics
+export interface OptimizedVideoDetails {
+  // Video Information
+  videoTitle: string;
+  videoId: string;
+  duration: string;
+  tags?: string[];
+  videoDescription?: string;
+  transcription?: {
+    text: string;
+    wordCount: number;
+    chunkInfo?: {
+      chunkStart: number;
+      chunkEnd: number;
+      totalWords: number;
+      hasMore: boolean;
+    };
+  };
+  videoPublished: string;
+  categoryId: string;                 // category name, not ID
+  videoViewCount: number;
+  likeCount: number;
+  commentCount: number;
+  engagementRatio: string;
+  thumbnail: string;
+  videoLanguage?: string;
+
+  // Channel Information (optional)
+  channelMetrics?: ChannelMetrics;
 } 

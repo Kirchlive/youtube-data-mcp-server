@@ -1,5 +1,13 @@
 import { google, youtube_v3 } from 'googleapis';
 import { getSubtitles } from 'youtube-caption-extractor';
+import {
+  getCategoryName,
+  getTopicName,
+  getNCSRating,
+  GetVideoDetailsOptions,
+  OptimizedVideoDetails,
+  ChannelMetrics
+} from '../types/youtube.js';
 
 export interface VideoOptions {
   videoId: string;
@@ -99,6 +107,270 @@ export class VideoManagement {
     }
   }
 
+  /**
+   * Get optimized video details with channel metrics and transcript
+   * @param videoIds - Array of video IDs
+   * @param options - Configuration options
+   * @returns Array of optimized video details
+   */
+  async getVideoDetails(
+    videoIds: string[],
+    options?: GetVideoDetailsOptions
+  ): Promise<OptimizedVideoDetails[]> {
+    await this.initialize();
+
+    // Process options with defaults
+    const {
+      includeChannelInfo = true,
+      includeTagDescTrans = true,
+      transcriptChunk = 1000,
+      chunkStart = 1,
+      descriptionLength = 250,
+      tagsLength = 100,
+      lang
+    } = options || {};
+
+    try {
+      // Step 1: Fetch video details (batch - max 50 per request)
+      const videoResponses: youtube_v3.Schema$Video[] = [];
+
+      for (let i = 0; i < videoIds.length; i += 50) {
+        const batchIds = videoIds.slice(i, i + 50);
+        const response = await this.ensureInitialized().videos.list({
+          part: ['snippet', 'contentDetails', 'statistics'],
+          id: batchIds
+        });
+
+        if (response.data.items) {
+          videoResponses.push(...response.data.items);
+        }
+      }
+
+      if (videoResponses.length === 0) {
+        throw new Error('No videos found');
+      }
+
+      // Step 2: Get unique channel IDs if needed
+      const channelIds = includeChannelInfo
+        ? [...new Set(videoResponses.map(v => v.snippet?.channelId).filter((id): id is string => !!id))]
+        : [];
+
+      // Step 3: Fetch channel details with topicDetails
+      const channelDataMap = new Map<string, youtube_v3.Schema$Channel>();
+
+      if (channelIds.length > 0) {
+        for (let i = 0; i < channelIds.length; i += 50) {
+          const batchIds = channelIds.slice(i, i + 50);
+          const channelResponse = await this.ensureInitialized().channels.list({
+            part: ['snippet', 'statistics', 'brandingSettings', 'topicDetails'],
+            id: batchIds
+          });
+
+          if (channelResponse.data.items) {
+            channelResponse.data.items.forEach(channel => {
+              if (channel.id) {
+                channelDataMap.set(channel.id, channel);
+              }
+            });
+          }
+        }
+      }
+
+      // Step 4: Fetch transcripts if requested
+      const transcriptMap = new Map<string, string>();
+
+      if (includeTagDescTrans) {
+        await Promise.all(
+          videoIds.map(async (videoId) => {
+            try {
+              const targetLang = lang || process.env.YOUTUBE_TRANSCRIPT_LANG || 'en';
+              const subtitles = await getSubtitles({
+                videoID: videoId,
+                lang: targetLang
+              });
+
+              // Convert subtitle array to full text
+              const fullText = subtitles.map(item => item.text).join(' ');
+              transcriptMap.set(videoId, fullText);
+            } catch (error) {
+              // Transcript might not be available - skip silently
+              transcriptMap.set(videoId, '');
+            }
+          })
+        );
+      }
+
+      // Step 5: Process and optimize each video
+      const optimizedVideos: OptimizedVideoDetails[] = videoResponses.map(video => {
+        const snippet = video.snippet;
+        const statistics = video.statistics;
+        const contentDetails = video.contentDetails;
+        const videoId = video.id!;
+
+        // Parse statistics
+        const videoViewCount = parseInt(statistics?.viewCount || '0', 10);
+        const likeCount = parseInt(statistics?.likeCount || '0', 10);
+        const commentCount = parseInt(statistics?.commentCount || '0', 10);
+
+        // Calculate engagement ratio
+        const engagementRatio = videoViewCount > 0
+          ? (((likeCount + commentCount) / (videoViewCount / 100))).toFixed(2)
+          : '0.00';
+
+        // Format duration
+        const duration = this.formatDuration(contentDetails?.duration || 'PT0S');
+
+        // Get best quality thumbnail
+        const thumbnail = snippet?.thumbnails?.maxres?.url ||
+                         snippet?.thumbnails?.high?.url ||
+                         snippet?.thumbnails?.default?.url ||
+                         '';
+
+        // Truncate description if needed
+        let videoDescription: string | undefined = undefined;
+        if (includeTagDescTrans && snippet?.description) {
+          videoDescription = snippet.description.length > descriptionLength
+            ? snippet.description.substring(0, descriptionLength) + '...'
+            : snippet.description;
+        }
+
+        // Truncate tags if needed
+        let tags: string[] | undefined = undefined;
+        if (includeTagDescTrans && snippet?.tags && snippet.tags.length > 0) {
+          tags = [];
+          let totalLength = 0;
+
+          for (const tag of snippet.tags) {
+            if (totalLength + tag.length > tagsLength) {
+              break;
+            }
+            tags.push(tag);
+            totalLength += tag.length;
+          }
+        }
+
+        // Process transcript with word-based chunking
+        let transcription: OptimizedVideoDetails['transcription'] = undefined;
+        if (includeTagDescTrans && transcriptMap.has(videoId)) {
+          const fullTranscript = transcriptMap.get(videoId)!;
+
+          if (fullTranscript) {
+            const chunked = this.chunkTranscriptByWords(fullTranscript, transcriptChunk, chunkStart);
+            transcription = chunked;
+          }
+        }
+
+        // Build optimized video details
+        const optimizedVideo: OptimizedVideoDetails = {
+          videoTitle: snippet?.title || 'Unknown Title',
+          videoId,
+          duration,
+          videoPublished: snippet?.publishedAt || '',
+          categoryId: getCategoryName(snippet?.categoryId || undefined),
+          videoViewCount,
+          likeCount,
+          commentCount,
+          engagementRatio,
+          thumbnail
+        };
+
+        // Add optional video fields
+        if (tags && tags.length > 0) optimizedVideo.tags = tags;
+        if (videoDescription) optimizedVideo.videoDescription = videoDescription;
+        if (transcription) optimizedVideo.transcription = transcription;
+        if (snippet?.defaultAudioLanguage) optimizedVideo.videoLanguage = snippet.defaultAudioLanguage;
+
+        // Add channel metrics if requested
+        if (includeChannelInfo && snippet?.channelId) {
+          const channelData = channelDataMap.get(snippet.channelId);
+
+          if (channelData) {
+            const channelStats = channelData.statistics;
+            const channelSnippet = channelData.snippet;
+            const brandingSettings = channelData.brandingSettings;
+            const topicDetails = channelData.topicDetails;
+
+            // Parse channel statistics
+            const subscriberCount = parseInt(channelStats?.subscriberCount || '0', 10);
+            const channelViewCount = parseInt(channelStats?.viewCount || '0', 10);
+            const channelVideoCount = parseInt(channelStats?.videoCount || '0', 10);
+
+            // Calculate channel metrics
+            const avgVideoViews = channelVideoCount > 0
+              ? Math.round(channelViewCount / channelVideoCount)
+              : 0;
+
+            // Calculate channel age in weeks
+            const channelPublished = channelSnippet?.publishedAt || '';
+            const channelAgeMs = channelPublished
+              ? Date.now() - new Date(channelPublished).getTime()
+              : 0;
+            const channelAgeWeeks = Math.max(1, Math.floor(channelAgeMs / (7 * 24 * 60 * 60 * 1000)));
+
+            const ccVideosPerWeek = channelVideoCount / channelAgeWeeks;
+
+            // Calculate VSR (Views/Subs Ratio)
+            const vsrViewsSubsRatio = subscriberCount > 0
+              ? (avgVideoViews / subscriberCount) * 100
+              : 0;
+
+            // Calculate NCS Total (Normalized Channel Score)
+            const vsr_normalized = Math.min(100, (vsrViewsSubsRatio / 14) * 100);
+            const content_consistency = Math.min(100, ccVideosPerWeek * 4 * 10);
+            const ncsTotal = Math.round((vsr_normalized * 0.6) + (content_consistency * 0.4));
+            const ncsRating = getNCSRating(ncsTotal);
+
+            // Process topic IDs to names
+            let topicNames: string[] | undefined = undefined;
+            if (topicDetails?.topicIds && topicDetails.topicIds.length > 0) {
+              topicNames = topicDetails.topicIds.map(id => getTopicName(id));
+            }
+
+            // Truncate channel description
+            let channelDescription: string | undefined = undefined;
+            if (channelSnippet?.description) {
+              channelDescription = channelSnippet.description.length > descriptionLength
+                ? channelSnippet.description.substring(0, descriptionLength) + '...'
+                : channelSnippet.description;
+            }
+
+            const channelMetrics: ChannelMetrics = {
+              channelName: channelSnippet?.title || 'Unknown Channel',
+              channelId: snippet.channelId,
+              subscriberCount,
+              channelViewCount,
+              channelVideoCount,
+              channelPublished,
+              avgVideoViews,
+              ccVideosPerWeek: parseFloat(ccVideosPerWeek.toFixed(2)),
+              vsrViewsSubsRatio: parseFloat(vsrViewsSubsRatio.toFixed(2)),
+              ncsTotal,
+              ncsRating
+            };
+
+            // Add optional channel fields
+            if (channelDescription) channelMetrics.channelDescription = channelDescription;
+            if (brandingSettings?.channel?.keywords) {
+              channelMetrics.keywords = brandingSettings.channel.keywords.split(' ').slice(0, 10);
+            }
+            if (topicNames && topicNames.length > 0) channelMetrics.topicIds = topicNames;
+            if (channelSnippet?.defaultLanguage) channelMetrics.channelLanguage = channelSnippet.defaultLanguage;
+
+            optimizedVideo.channelMetrics = channelMetrics;
+          }
+        }
+
+        return optimizedVideo;
+      });
+
+      return optimizedVideos;
+    } catch (error) {
+      throw new Error(
+        `Failed to retrieve optimized video details: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
   async searchVideos({ query, maxResults = 10 }: SearchOptions) {
     await this.initialize();
 
@@ -137,7 +409,7 @@ export class VideoManagement {
   }
 
   /**
-   * Apply chunking to transcript array
+   * Apply chunking to transcript array (line-based - legacy)
    * @param transcript - Full transcript array
    * @param chunk - Chunk number (0 or undefined = full, 1 = first 1000, 2 = next 1000, etc.)
    * @returns Chunked transcript with metadata
@@ -180,6 +452,90 @@ export class VideoManagement {
         hasMore: endIndex < transcript.length
       }
     };
+  }
+
+  /**
+   * Chunk transcript text by word count
+   * @param transcriptText - Full transcript as string
+   * @param chunkSize - Number of words per chunk (default: 1000)
+   * @param startWord - Starting word position (default: 1)
+   * @returns Chunked text with metadata
+   */
+  private chunkTranscriptByWords(
+    transcriptText: string,
+    chunkSize: number = 1000,
+    startWord: number = 1
+  ): {
+    text: string;
+    wordCount: number;
+    chunkInfo?: {
+      chunkStart: number;
+      chunkEnd: number;
+      totalWords: number;
+      hasMore: boolean;
+    };
+  } {
+    // Split into words (preserve spaces for readability)
+    const words = transcriptText.split(/\s+/).filter(w => w.length > 0);
+    const totalWords = words.length;
+
+    // If chunkSize === 0, return full transcript
+    if (chunkSize === 0 || totalWords === 0) {
+      return {
+        text: transcriptText,
+        wordCount: totalWords
+      };
+    }
+
+    // Validate startWord
+    if (startWord < 1) {
+      throw new Error('chunkStart must be at least 1');
+    }
+
+    if (startWord > totalWords) {
+      throw new Error(
+        `chunkStart (${startWord}) exceeds total words in transcript (${totalWords})`
+      );
+    }
+
+    // Calculate boundaries (convert to 0-indexed)
+    const startIndex = startWord - 1;
+    const endIndex = Math.min(startIndex + chunkSize, totalWords);
+
+    // Extract chunk
+    const chunkWords = words.slice(startIndex, endIndex);
+    const chunkText = chunkWords.join(' ');
+
+    return {
+      text: chunkText,
+      wordCount: chunkWords.length,
+      chunkInfo: {
+        chunkStart: startWord,
+        chunkEnd: startWord + chunkWords.length - 1,
+        totalWords,
+        hasMore: endIndex < totalWords
+      }
+    };
+  }
+
+  /**
+   * Format ISO 8601 duration to human-readable format
+   * @param isoDuration - ISO 8601 duration string (e.g., "PT1H23M45S")
+   * @returns Formatted duration (e.g., "1:23:45" or "23:45")
+   */
+  private formatDuration(isoDuration: string): string {
+    const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return '0:00';
+
+    const hours = parseInt(match[1] || '0', 10);
+    const minutes = parseInt(match[2] || '0', 10);
+    const seconds = parseInt(match[3] || '0', 10);
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    } else {
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
   }
 
   async getTranscript(videoId: string, lang?: string, chunk?: number) {

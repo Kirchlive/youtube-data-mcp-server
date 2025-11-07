@@ -1,9 +1,28 @@
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/icraft2170-youtube-data-mcp-server-badge.png)](https://mseep.ai/app/icraft2170-youtube-data-mcp-server)
 
-# YouTube MCP Server v3.0
+# YouTube MCP Server v3.1
 [![smithery badge](https://smithery.ai/badge/@icraft2170/youtube-data-mcp-server)](https://smithery.ai/server/@icraft2170/youtube-data-mcp-server)
 
-An enhanced Model Context Protocol (MCP) server implementation with comprehensive YouTube Data API integration. Featuring optimized playlist management with 85% token reduction, transcript chunking, and robust error handling. Perfect for AI applications requiring deep YouTube content analysis.
+An enhanced Model Context Protocol (MCP) server implementation with comprehensive YouTube Data API integration. Featuring optimized video details with channel metrics, word-based transcript chunking, and 85% token reduction for playlists. Perfect for AI applications requiring deep YouTube content analysis.
+
+## ⭐ What's New in v3.1
+
+### 🎬 Optimized Video Details with Channel Metrics (BREAKING CHANGE)
+* **70% Token Reduction**: ~500-800 tokens per video (vs ~3,000 with raw API)
+* **Channel Performance Metrics**: NCS Score (Normalized Channel Score) with rating system
+  - `avgVideoViews`: Average views per video
+  - `ccVideosPerWeek`: Content consistency (videos per week)
+  - `vsrViewsSubsRatio`: Views/Subscriber ratio
+  - `ncsTotal`: Overall score (0-100) with rating (Excellent/Good/Average/Bad)
+* **Word-Based Transcript Chunking**: Precise control with `transcriptChunk` (word count) and `chunkStart` (starting word)
+* **Topic Mapping**: 50+ YouTube topic IDs → human-readable names
+* **Comprehensive Data**: Video + Channel info in one optimized response
+
+### 📝 Word-Based Transcript Chunking
+* **Better Token Control**: Chunk by word count instead of lines
+* **Flexible Navigation**: `chunkStart` parameter for precise positioning
+  - Example: `chunkStart=1` (words 1-1000), `chunkStart=1001` (words 1001-2000)
+* **Metadata**: Returns `{ text, wordCount, chunkInfo: { chunkStart, chunkEnd, totalWords, hasMore } }`
 
 ## ⭐ What's New in v3.0
 
@@ -84,7 +103,7 @@ An enhanced Model Context Protocol (MCP) server implementation with comprehensiv
 ### Video Tools (6)
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `getVideoDetails` | Bulk video information retrieval | `videoIds` (array) |
+| `getVideoDetails` | **v3.1 OPTIMIZED** Video + Channel metrics (~500-800 tokens/video) | `videoIds` (array), `includeChannelInfo?`, `includeTagDescTrans?`, `transcriptChunk?`, `chunkStart?`, `descriptionLength?`, `tagsLength?`, `lang?` |
 | `searchVideos` | Advanced search with pagination | `query`, `maxResults?` |
 | `getRelatedVideos` | Find similar content | `videoId`, `maxResults?` |
 | `compareVideos` | Side-by-side video comparison | `videoIds` (array) |
@@ -194,6 +213,42 @@ The server exposes the following ports for communication:
 - Set usage limits for your API key to prevent unauthorized use
 
 ## Changelog
+
+### v3.1.0 (2025-11-07)
+**Feature Release - Optimized Video Details with Channel Metrics**
+
+⚠️ **BREAKING CHANGES:**
+- `getVideoDetails` API completely redesigned:
+  - Old: `getVideoDetails({ videoIds })` → Returns raw YouTube API response (~3,000 tokens/video)
+  - New: `getVideoDetails(videoIds, { includeChannelInfo?, includeTagDescTrans?, transcriptChunk?, chunkStart?, descriptionLength?, tagsLength?, lang? })`
+  - Returns optimized format with video + channel metrics (~500-800 tokens/video)
+
+**New Features:**
+- 🎬 **70% Token Reduction** for video details (~500-800 vs ~3,000 tokens per video)
+- 📊 **NCS Score System** (Normalized Channel Score):
+  - `avgVideoViews`: channelViewCount / channelVideoCount
+  - `ccVideosPerWeek`: channelVideoCount / ChannelAgeWeeks
+  - `vsrViewsSubsRatio`: (avgVideoViews / Subs) × 100
+  - `ncsTotal`: Weighted score (0-100) with rating (Excellent/Good/Average/Bad)
+  - Formula: `(vsr_normalized × 0.6) + (content_consistency × 0.4)`
+- 📝 **Word-Based Transcript Chunking**:
+  - `transcriptChunk`: Word count per chunk (default: 1000)
+  - `chunkStart`: Starting word position (default: 1)
+  - Returns: `{ text, wordCount, chunkInfo: { chunkStart, chunkEnd, totalWords, hasMore } }`
+- 🏷️ **Topic Mapping**: 50+ YouTube topic IDs → human-readable names (Music, Gaming, Sports, etc.)
+- 🎯 **Channel Metrics in One Call**: Get video + channel performance data together
+- ✂️ **Flexible Truncation**: Optional descriptions/tags with customizable lengths
+
+**Improvements:**
+- ✅ Word-based chunking for better token control (vs line-based)
+- ✅ Comprehensive channel performance analysis
+- ✅ Topic names instead of cryptic IDs
+- ✅ Batch processing for multiple videos with channel data
+- ✅ Optional fields to minimize response size
+
+**API Changes:**
+- `getVideoDetails`: Complete redesign (see breaking changes above)
+- New return format: `OptimizedVideoDetails[]` with optional `channelMetrics`
 
 ### v3.0.0 (2025-11-07)
 **Major Release - Token Optimization & Transcript Chunking**
