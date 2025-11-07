@@ -179,7 +179,7 @@ export class VideoManagement {
       }
 
       // Step 4: Fetch transcripts if requested
-      const transcriptMap = new Map<string, { fullText: string, formattedSegments: Array<Record<string, string>> }>();
+      const transcriptMap = new Map<string, { fullText: string, formattedSegments: Record<string, string> }>();
 
       if (includeTagDescTrans) {
         await Promise.all(
@@ -194,20 +194,20 @@ export class VideoManagement {
               // Convert subtitle array to full text (for word counting)
               const fullText = subtitles.map(item => item.text).join(' ');
 
-              // Create formatted segments: [{"0:00": "text"}, {"0:05": "text"}, ...]
-              const formattedSegments = subtitles.map(item => {
+              // Create formatted segments as single object: {"0:00": "text", "0:05": "text", ...}
+              const formattedSegments = subtitles.reduce((acc, item) => {
                 const startSeconds = parseFloat(item.start);
                 const minutes = Math.floor(startSeconds / 60);
                 const seconds = Math.floor(startSeconds % 60);
                 const timestamp = `${minutes}:${String(seconds).padStart(2, '0')}`;
-
-                return { [timestamp]: item.text };
-              });
+                acc[timestamp] = item.text;
+                return acc;
+              }, {} as Record<string, string>);
 
               transcriptMap.set(videoId, { fullText, formattedSegments });
             } catch (error) {
               // Transcript might not be available - skip silently
-              transcriptMap.set(videoId, { fullText: '', formattedSegments: [] });
+              transcriptMap.set(videoId, { fullText: '', formattedSegments: {} });
             }
           })
         );
