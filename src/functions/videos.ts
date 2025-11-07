@@ -123,10 +123,12 @@ export class VideoManagement {
     const {
       includeChannelInfo = true,
       includeTagDescTrans = true,
+      transcriptOnly = false,
       transcriptChunk = 1000,
       chunkStart = 1,
       descriptionLength = 250,
       tagsLength = 100,
+      channelDescLength = 150,
       lang
     } = options || {};
 
@@ -226,17 +228,17 @@ export class VideoManagement {
                          snippet?.thumbnails?.default?.url ||
                          '';
 
-        // Truncate description if needed
+        // Truncate description if needed (only if not transcriptOnly)
         let videoDescription: string | undefined = undefined;
-        if (includeTagDescTrans && snippet?.description) {
+        if (includeTagDescTrans && !transcriptOnly && snippet?.description) {
           videoDescription = snippet.description.length > descriptionLength
             ? snippet.description.substring(0, descriptionLength) + '...'
             : snippet.description;
         }
 
-        // Truncate tags if needed
+        // Truncate tags if needed (only if not transcriptOnly)
         let tags: string[] | undefined = undefined;
-        if (includeTagDescTrans && snippet?.tags && snippet.tags.length > 0) {
+        if (includeTagDescTrans && !transcriptOnly && snippet?.tags && snippet.tags.length > 0) {
           tags = [];
           let totalLength = 0;
 
@@ -329,14 +331,13 @@ export class VideoManagement {
             // Truncate channel description
             let channelDescription: string | undefined = undefined;
             if (channelSnippet?.description) {
-              channelDescription = channelSnippet.description.length > descriptionLength
-                ? channelSnippet.description.substring(0, descriptionLength) + '...'
+              channelDescription = channelSnippet.description.length > channelDescLength
+                ? channelSnippet.description.substring(0, channelDescLength) + '...'
                 : channelSnippet.description;
             }
 
             const channelMetrics: ChannelMetrics = {
               channelName: channelSnippet?.title || 'Unknown Channel',
-              channelId: snippet.channelId,
               subscriberCount,
               channelViewCount,
               channelVideoCount,
@@ -351,7 +352,10 @@ export class VideoManagement {
             // Add optional channel fields
             if (channelDescription) channelMetrics.channelDescription = channelDescription;
             if (brandingSettings?.channel?.keywords) {
-              channelMetrics.keywords = brandingSettings.channel.keywords.split(' ').slice(0, 10);
+              // Parse keywords: split by space but handle quoted phrases
+              const keywordString = brandingSettings.channel.keywords;
+              const keywords = keywordString.match(/"[^"]+"|[^\s]+/g)?.map(k => k.replace(/^"|"$/g, '')) || [];
+              channelMetrics.keywords = keywords.slice(0, 10);
             }
             if (topicNames && topicNames.length > 0) channelMetrics.topicIds = topicNames;
             if (channelSnippet?.defaultLanguage) channelMetrics.channelLanguage = channelSnippet.defaultLanguage;

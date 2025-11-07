@@ -242,7 +242,6 @@ export function getNCSRating(score: number): NCSRating {
 // Channel metrics with calculated ratios
 export interface ChannelMetrics {
   channelName: string;
-  channelId: string;
   subscriberCount: number;
   channelViewCount: number;
   channelVideoCount: number;
@@ -262,10 +261,12 @@ export interface ChannelMetrics {
 export interface GetVideoDetailsOptions {
   includeChannelInfo?: boolean;       // default: true
   includeTagDescTrans?: boolean;      // default: true
+  transcriptOnly?: boolean;           // default: false (only include transcript, no tags/desc)
   transcriptChunk?: number;           // default: 1000 words
   chunkStart?: number;                // default: 1 (start at word 1, then 1001...)
   descriptionLength?: number;         // default: 250
   tagsLength?: number;                // default: 100
+  channelDescLength?: number;         // default: 150
   lang?: string;                      // transcript language
 }
 
