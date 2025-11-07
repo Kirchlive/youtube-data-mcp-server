@@ -1,5 +1,5 @@
 import { google, youtube_v3 } from 'googleapis';
-import { getSubtitles } from 'youtube-captions-scraper';
+import { getSubtitles } from 'youtube-caption-extractor';
 
 export interface VideoOptions {
   videoId: string;
@@ -90,13 +90,21 @@ export class VideoManagement {
 
   async getTranscript(videoId: string, lang?: string) {
     try {
+      // Use provided language, environment variable, or default to 'en'
+      const targetLang = lang || process.env.YOUTUBE_TRANSCRIPT_LANG || 'en';
+
       const transcript = await getSubtitles({
         videoID: videoId,
-        lang: lang || process.env.YOUTUBE_TRANSCRIPT_LANG || 'en'
+        lang: targetLang
       });
+
       return transcript;
     } catch (error: any) {
-      throw new Error(`Failed to retrieve transcript: ${error.message}`);
+      // Provide more detailed error message
+      const targetLang = lang || process.env.YOUTUBE_TRANSCRIPT_LANG || 'en';
+      throw new Error(
+        `Failed to retrieve transcript for video ${videoId} (language: ${targetLang}): ${error.message}`
+      );
     }
   }
 
