@@ -179,7 +179,7 @@ export class VideoManagement {
       }
 
       // Step 4: Fetch transcripts if requested
-      const transcriptMap = new Map<string, string>();
+      const transcriptMap = new Map<string, { text: string, segments: Array<{ timestamp: string, text: string, start: number }> }>();
 
       if (includeTagDescTrans) {
         await Promise.all(
@@ -193,10 +193,24 @@ export class VideoManagement {
 
               // Convert subtitle array to full text
               const fullText = subtitles.map(item => item.text).join(' ');
-              transcriptMap.set(videoId, fullText);
+
+              // Create timestamped segments
+              const segments = subtitles.map(item => {
+                const startSeconds = parseFloat(item.start);
+                const minutes = Math.floor(startSeconds / 60);
+                const seconds = Math.floor(startSeconds % 60);
+
+                return {
+                  timestamp: `${minutes}:${String(seconds).padStart(2, '0')}`,
+                  text: item.text,
+                  start: startSeconds
+                };
+              });
+
+              transcriptMap.set(videoId, { text: fullText, segments });
             } catch (error) {
               // Transcript might not be available - skip silently
-              transcriptMap.set(videoId, '');
+              transcriptMap.set(videoId, { text: '', segments: [] });
             }
           })
         );
@@ -254,11 +268,14 @@ export class VideoManagement {
         // Process transcript with word-based chunking
         let transcription: OptimizedVideoDetails['transcription'] = undefined;
         if (includeTagDescTrans && transcriptMap.has(videoId)) {
-          const fullTranscript = transcriptMap.get(videoId)!;
+          const transcriptData = transcriptMap.get(videoId)!;
 
-          if (fullTranscript) {
-            const chunked = this.chunkTranscriptByWords(fullTranscript, transcriptChunk, chunkStart);
-            transcription = chunked;
+          if (transcriptData && transcriptData.text) {
+            const chunked = this.chunkTranscriptByWords(transcriptData.text, transcriptChunk, chunkStart);
+            transcription = {
+              ...chunked,
+              segments: transcriptData.segments
+            };
           }
         }
 
