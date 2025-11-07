@@ -472,14 +472,24 @@ async function main() {
     );
 
     server.tool("getPlaylistItems",
-        "Get all videos in a YouTube playlist with pagination support. Returns video details for each item in the playlist.",
+        "Get optimized playlist items with detailed video information. Returns ~400 tokens per video (vs ~2,700 with raw API). Includes engagement metrics, formatted duration, category names, and optional description/tags truncation. Use listItemStart for pagination (e.g., listItemStart=26 for second page of 25 items).",
         {
             playlistId: z.string(),
-            maxResults: z.number().optional()
+            listItemStart: z.number().optional(),
+            maxResults: z.number().optional(),
+            includeDescriptionTags: z.boolean().optional(),
+            descriptionLength: z.number().optional(),
+            tagsLength: z.number().optional()
         },
-        async ({ playlistId, maxResults }) => {
+        async ({ playlistId, listItemStart, maxResults, includeDescriptionTags, descriptionLength, tagsLength }) => {
             try {
-                const result = await playlistManager.getPlaylistItems({ playlistId, maxResults });
+                const result = await playlistManager.getPlaylistItems(playlistId, {
+                    listItemStart,
+                    maxResults,
+                    includeDescriptionTags,
+                    descriptionLength,
+                    tagsLength
+                });
                 return {
                     content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
                 };

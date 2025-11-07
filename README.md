@@ -1,9 +1,29 @@
 [![MseeP.ai Security Assessment Badge](https://mseep.net/pr/icraft2170-youtube-data-mcp-server-badge.png)](https://mseep.ai/app/icraft2170-youtube-data-mcp-server)
 
-# YouTube MCP Server v2.0
+# YouTube MCP Server v3.0
 [![smithery badge](https://smithery.ai/badge/@icraft2170/youtube-data-mcp-server)](https://smithery.ai/server/@icraft2170/youtube-data-mcp-server)
 
-An enhanced Model Context Protocol (MCP) server implementation with comprehensive YouTube Data API integration. Featuring advanced playlist management, transcript search, and robust error handling. Perfect for AI applications requiring deep YouTube content analysis.
+An enhanced Model Context Protocol (MCP) server implementation with comprehensive YouTube Data API integration. Featuring optimized playlist management with 85% token reduction, transcript chunking, and robust error handling. Perfect for AI applications requiring deep YouTube content analysis.
+
+## ⭐ What's New in v3.0
+
+### 🚀 Optimized Playlist Items (BREAKING CHANGE)
+* **85% Token Reduction**: ~400 tokens per video (vs ~2,700 with raw API)
+* **Smart Pagination**: Use `listItemStart` for efficient navigation (e.g., start at video #26)
+* **Engagement Metrics**: Calculated engagement ratios (likes + comments per 100 views)
+* **Formatted Data**: Human-readable durations (1:23:45), category names (not IDs)
+* **Flexible Truncation**: Optional description/tags with customizable lengths
+* **Best Quality Thumbnails**: Automatic maxres/high resolution fallback
+
+### 📦 Transcript Chunking System
+* Paginate long transcripts with numeric chunks (1 = lines 1-1000, 2 = lines 1001-2000)
+* Applies to: `getTranscripts`, `searchTranscript`, `getTimestampedCaptions`, `getPlaylistVideoTranscripts`
+* Solves token limit issues for long videos (20+ minutes)
+* Includes metadata: `{ chunk, start, end, total, hasMore }`
+
+### 🔧 API Error Fixes
+* Fixed `getRelatedVideos` deprecated parameter issue
+* Now uses category-based recommendations
 
 ## ⭐ What's New in v2.0
 
@@ -74,9 +94,9 @@ An enhanced Model Context Protocol (MCP) server implementation with comprehensiv
 ### Transcript Tools (4)
 | Tool | Description | Parameters |
 |------|-------------|------------|
-| `getTranscripts` | Bulk transcript retrieval | `videoIds` (array), `lang?` |
-| `searchTranscript` | **NEW** Search within transcripts | `videoId`, `query`, `lang?` |
-| `getTimestampedCaptions` | **NEW** Human-readable timestamps | `videoId`, `lang?` |
+| `getTranscripts` | Bulk transcript retrieval | `videoIds` (array), `lang?`, `chunk?` |
+| `searchTranscript` | Search within transcripts | `videoId`, `query`, `lang?`, `chunk?` |
+| `getTimestampedCaptions` | Human-readable timestamps | `videoId`, `lang?`, `chunk?` |
 
 ### Channel Tools (4)
 | Tool | Description | Parameters |
@@ -86,13 +106,13 @@ An enhanced Model Context Protocol (MCP) server implementation with comprehensiv
 | `getChannelTopVideos` | Most popular videos | `channelId`, `maxResults?` |
 | `searchChannelContent` | **NEW** Search within channel | `channelId`, `query`, `maxResults?` |
 
-### Playlist Tools (5) - **ALL NEW!**
+### Playlist Tools (5)
 | Tool | Description | Parameters |
 |------|-------------|------------|
 | `getPlaylist` | Playlist metadata | `playlistId`, `parts?` |
-| `getPlaylistItems` | Videos in playlist | `playlistId`, `maxResults?` |
+| `getPlaylistItems` | **v3.0 OPTIMIZED** Videos in playlist (~400 tokens/video) | `playlistId`, `listItemStart?`, `maxResults?`, `includeDescriptionTags?`, `descriptionLength?`, `tagsLength?` |
 | `searchPlaylists` | Find playlists | `query`, `maxResults?` |
-| `getPlaylistVideoTranscripts` | Batch playlist transcripts | `playlistId`, `lang?`, `maxVideos?` |
+| `getPlaylistVideoTranscripts` | Batch playlist transcripts | `playlistId`, `lang?`, `maxVideos?`, `chunk?` |
 | `listChannelPlaylists` | Channel's playlists | `channelId`, `maxResults?` |
 
 ## Installation
@@ -174,6 +194,36 @@ The server exposes the following ports for communication:
 - Set usage limits for your API key to prevent unauthorized use
 
 ## Changelog
+
+### v3.0.0 (2025-11-07)
+**Major Release - Token Optimization & Transcript Chunking**
+
+⚠️ **BREAKING CHANGES:**
+- `getPlaylistItems` API completely redesigned:
+  - Old: `getPlaylistItems({ playlistId, maxResults })`
+  - New: `getPlaylistItems(playlistId, { listItemStart?, maxResults?, includeDescriptionTags?, descriptionLength?, tagsLength? })`
+  - Returns optimized format: `{ totalListVideos, items: OptimizedPlaylistItem[] }`
+  - Each item includes: engagement metrics, formatted duration, category names, truncated descriptions/tags
+
+**New Features:**
+- 🚀 **85% Token Reduction** for playlist items (~400 vs ~2,700 tokens per video)
+- 📦 **Transcript Chunking System** for paginating long transcripts (all transcript tools)
+- 📊 **Engagement Ratio Calculation** (likes + comments per 100 views)
+- 🏷️ **Category Name Mapping** (44 YouTube categories, human-readable names)
+- ⏱️ **Duration Formatting** (ISO 8601 → "1:23:45" or "23:45")
+- 🖼️ **Best Quality Thumbnails** (maxres with high fallback)
+
+**Improvements:**
+- ✅ Fixed `getRelatedVideos` API deprecation error (relatedToVideoId removed)
+- ✅ Smart pagination with `listItemStart` parameter
+- ✅ Flexible description/tags truncation
+- ✅ Comprehensive chunk metadata (`{ chunk, start, end, total, hasMore }`)
+- ✅ Validated parameter ranges with helpful error messages
+
+**API Changes:**
+- `getPlaylistItems`: Complete redesign (see breaking changes above)
+- All transcript tools: Added optional `chunk` parameter
+- `getRelatedVideos`: Now uses category-based search instead of deprecated relatedToVideoId
 
 ### v2.0.0 (2025-11-07)
 **Major Release - Feature Complete**

@@ -1,14 +1,15 @@
 import { google, youtube_v3 } from 'googleapis';
 import { getSubtitles } from 'youtube-caption-extractor';
+import {
+  getCategoryName,
+  GetPlaylistItemsOptions,
+  GetPlaylistItemsResponse,
+  OptimizedPlaylistItem
+} from '../types/youtube.js';
 
 export interface PlaylistOptions {
   playlistId: string;
   parts?: string[];
-}
-
-export interface PlaylistItemsOptions {
-  playlistId: string;
-  maxResults?: number;
 }
 
 export interface SearchPlaylistsOptions {
@@ -131,43 +132,246 @@ export class PlaylistManagement {
   }
 
   /**
-   * Get all videos in a playlist with pagination
+   * Get optimized playlist items with detailed video information
+   * @param playlistId - YouTube playlist ID
+   * @param options - Configuration options for filtering and formatting
+   * @returns Optimized playlist items with reduced token usage (~400 tokens per video)
    */
-  async getPlaylistItems({ playlistId, maxResults = 50 }: PlaylistItemsOptions) {
+  async getPlaylistItems(
+    playlistId: string,
+    options?: GetPlaylistItemsOptions
+  ): Promise<GetPlaylistItemsResponse> {
     await this.initialize();
 
-    try {
-      const results: youtube_v3.Schema$PlaylistItem[] = [];
-      let nextPageToken: string | undefined = undefined;
-      const targetResults = Math.min(maxResults, this.ABSOLUTE_MAX_RESULTS);
+    // Step 1: Process options with defaults
+    const {
+      listItemStart = 1,
+      maxResults = 50,
+      includeDescriptionTags = true,
+      descriptionLength = 250,
+      tagsLength = 100
+    } = options || {};
 
-      while (results.length < targetResults) {
-        const response: youtube_v3.Schema$PlaylistItemListResponse = (await this.ensureInitialized().playlistItems.list({
-          part: ['snippet', 'contentDetails'],
-          playlistId: playlistId,
-          maxResults: Math.min(this.MAX_RESULTS_PER_PAGE, targetResults - results.length),
-          pageToken: nextPageToken
-        })).data;
+    // Validate parameters
+    if (listItemStart < 1) {
+      throw new Error('listItemStart must be at least 1');
+    }
+    if (maxResults < 1 || maxResults > 50) {
+      throw new Error('maxResults must be between 1 and 50');
+    }
+
+    try {
+      // Step 2: Get playlist metadata for totalListVideos
+      const playlistResponse = await this.ensureInitialized().playlists.list({
+        part: ['contentDetails'],
+        id: [playlistId]
+      });
+
+      if (!playlistResponse.data.items?.length) {
+        throw new Error(`Playlist not found: ${playlistId}`);
+      }
+
+      const totalListVideos = playlistResponse.data.items[0].contentDetails?.itemCount || 0;
+
+      // Validate listItemStart against total videos
+      if (listItemStart > totalListVideos) {
+        throw new Error(
+          `listItemStart (${listItemStart}) exceeds total videos in playlist (${totalListVideos})`
+        );
+      }
+
+      // Step 3: Get playlist items with pagination support
+      const playlistItems: youtube_v3.Schema$PlaylistItem[] = [];
+      let nextPageToken: string | undefined = undefined;
+      let currentPosition = 0;
+
+      // If listItemStart > 1, we need to skip items
+      const itemsToSkip = listItemStart - 1;
+      let itemsSkipped = 0;
+
+      while (playlistItems.length < maxResults) {
+        const response: youtube_v3.Schema$PlaylistItemListResponse = (
+          await this.ensureInitialized().playlistItems.list({
+            part: ['snippet', 'contentDetails'],
+            playlistId: playlistId,
+            maxResults: this.MAX_RESULTS_PER_PAGE,
+            pageToken: nextPageToken
+          })
+        ).data;
 
         if (!response.items?.length) {
           break;
         }
 
-        results.push(...response.items);
+        // Handle skipping for listItemStart
+        for (const item of response.items) {
+          if (itemsSkipped < itemsToSkip) {
+            itemsSkipped++;
+            continue;
+          }
+
+          playlistItems.push(item);
+
+          if (playlistItems.length >= maxResults) {
+            break;
+          }
+        }
+
         nextPageToken = response.nextPageToken || undefined;
 
-        if (!nextPageToken) {
+        if (!nextPageToken || playlistItems.length >= maxResults) {
           break;
         }
       }
 
-      return results.slice(0, targetResults);
+      if (playlistItems.length === 0) {
+        return {
+          totalListVideos,
+          items: []
+        };
+      }
+
+      // Step 4: Extract video IDs and fetch detailed video information
+      const videoIds = playlistItems
+        .map(item => item.snippet?.resourceId?.videoId)
+        .filter((id): id is string => id !== undefined);
+
+      if (videoIds.length === 0) {
+        return {
+          totalListVideos,
+          items: []
+        };
+      }
+
+      // Fetch video details in batch (max 50 IDs per request)
+      const videoDetailsResponse = await this.ensureInitialized().videos.list({
+        part: ['snippet', 'contentDetails', 'statistics'],
+        id: videoIds
+      });
+
+      if (!videoDetailsResponse.data.items?.length) {
+        throw new Error('Failed to retrieve video details');
+      }
+
+      // Create a map for quick video lookup
+      const videoDetailsMap = new Map(
+        videoDetailsResponse.data.items.map(video => [video.id!, video])
+      );
+
+      // Step 5: Transform and merge data
+      const optimizedItems: OptimizedPlaylistItem[] = playlistItems
+        .map(playlistItem => {
+          const videoId = playlistItem.snippet?.resourceId?.videoId;
+          if (!videoId) return null;
+
+          const videoDetails = videoDetailsMap.get(videoId);
+          if (!videoDetails) return null;
+
+          const snippet = videoDetails.snippet;
+          const statistics = videoDetails.statistics;
+          const contentDetails = videoDetails.contentDetails;
+
+          // Parse statistics
+          const viewCount = parseInt(statistics?.viewCount || '0', 10);
+          const likeCount = parseInt(statistics?.likeCount || '0', 10);
+          const commentCount = parseInt(statistics?.commentCount || '0', 10);
+
+          // Calculate engagement ratio: (likes + comments) / (views / 100)
+          const engagementRatio = viewCount > 0
+            ? (((likeCount + commentCount) / (viewCount / 100))).toFixed(2)
+            : '0.00';
+
+          // Format duration (ISO 8601 to readable format)
+          const duration = this.formatDuration(contentDetails?.duration || 'PT0S');
+
+          // Get best quality thumbnail
+          const thumbnail = snippet?.thumbnails?.maxres?.url ||
+                           snippet?.thumbnails?.high?.url ||
+                           snippet?.thumbnails?.default?.url ||
+                           '';
+
+          // Truncate description if needed
+          let description: string | undefined = undefined;
+          if (includeDescriptionTags && snippet?.description) {
+            description = snippet.description.length > descriptionLength
+              ? snippet.description.substring(0, descriptionLength) + '...'
+              : snippet.description;
+          }
+
+          // Truncate tags if needed
+          let tags: string[] | undefined = undefined;
+          if (includeDescriptionTags && snippet?.tags && snippet.tags.length > 0) {
+            tags = [];
+            let totalLength = 0;
+
+            for (const tag of snippet.tags) {
+              if (totalLength + tag.length > tagsLength) {
+                break;
+              }
+              tags.push(tag);
+              totalLength += tag.length;
+            }
+          }
+
+          const optimizedItem: OptimizedPlaylistItem = {
+            title: snippet?.title || 'Unknown Title',
+            videoId,
+            duration,
+            viewCount,
+            likeCount,
+            commentCount,
+            engagementRatio,
+            channelName: snippet?.channelTitle || 'Unknown Channel',
+            channelId: snippet?.channelId || '',
+            categoryId: getCategoryName(snippet?.categoryId || undefined),
+            publishedAt: snippet?.publishedAt || '',
+            thumbnail
+          };
+
+          // Add optional fields
+          if (includeDescriptionTags) {
+            if (description) optimizedItem.description = description;
+            if (tags && tags.length > 0) optimizedItem.tags = tags;
+          }
+
+          if (snippet?.defaultLanguage) {
+            optimizedItem.defaultLanguage = snippet.defaultLanguage;
+          }
+
+          return optimizedItem;
+        })
+        .filter((item): item is OptimizedPlaylistItem => item !== null);
+
+      return {
+        totalListVideos,
+        items: optimizedItems
+      };
     } catch (error) {
       throw new Error(
-        `Failed to retrieve playlist items for ${playlistId}: ${
+        `Failed to retrieve optimized playlist items for ${playlistId}: ${
           error instanceof Error ? error.message : String(error)
         }`
       );
+    }
+  }
+
+  /**
+   * Format ISO 8601 duration to human-readable format
+   * @param isoDuration - ISO 8601 duration string (e.g., "PT1H23M45S")
+   * @returns Formatted duration (e.g., "1:23:45" or "23:45")
+   */
+  private formatDuration(isoDuration: string): string {
+    const match = isoDuration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    if (!match) return '0:00';
+
+    const hours = parseInt(match[1] || '0', 10);
+    const minutes = parseInt(match[2] || '0', 10);
+    const seconds = parseInt(match[3] || '0', 10);
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    } else {
+      return `${minutes}:${seconds.toString().padStart(2, '0')}`;
     }
   }
 
@@ -227,15 +431,13 @@ export class PlaylistManagement {
 
     try {
       // Get playlist videos
-      const playlistItems = await this.getPlaylistItems({
-        playlistId,
-        maxResults: maxVideos
+      const playlistData = await this.getPlaylistItems(playlistId, {
+        maxResults: maxVideos,
+        includeDescriptionTags: false // We only need video IDs for transcripts
       });
 
-      // Extract video IDs
-      const videoIds = playlistItems
-        .map(item => item.snippet?.resourceId?.videoId)
-        .filter((id): id is string => id !== undefined);
+      // Extract video IDs from optimized items
+      const videoIds = playlistData.items.map(item => item.videoId);
 
       // Get transcripts in parallel (with rate limiting)
       const targetLang = lang || process.env.YOUTUBE_TRANSCRIPT_LANG || 'en';
